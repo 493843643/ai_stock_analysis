@@ -26,5 +26,6 @@ build/
 *.tmp
 *.swp
 
-# 数据缓存
+# 数据缓存（保留目录，忽略运行时生成的 json）
 data/*.json
+!data/.gitkeep

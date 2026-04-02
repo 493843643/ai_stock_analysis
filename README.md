@@ -56,7 +56,7 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/493843643/ai_stock_analysis.git
+git clone ssh://git@git.sankuai.com/~wanwenbo/ai_stock.git
 cd ai_stock_analysis
 ```
 

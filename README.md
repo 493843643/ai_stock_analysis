@@ -53,17 +53,35 @@
 
 ## 🚀 快速开始
 
-### 1. 安装依赖
+### 1. 克隆项目
 
 ```bash
-cd quant-platform/backend
-pip install flask flask-cors backtrader baostock akshare xgboost statsmodels scikit-learn pandas numpy
+git clone https://github.com/493843643/ai_stock_analysis.git
+cd ai_stock_analysis
 ```
 
-### 2. 启动后端
+### 2. 创建虚拟环境并安装依赖
 
 ```bash
-python app.py
+# 创建虚拟环境（推荐 Python 3.10+）
+python3 -m venv venv
+
+# 激活虚拟环境
+# macOS / Linux
+source venv/bin/activate
+# Windows
+venv\Scripts\activate
+
+# 安装全部依赖
+pip install -r requirements.txt
+```
+
+> 依赖较多（含 XGBoost、statsmodels 等），首次安装约需 2～5 分钟。
+
+### 3. 启动后端
+
+```bash
+python backend/app.py
 ```
 
 首次启动会加载全量 A 股列表（约 20 秒），完成后访问：

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>量化分析平台</title>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <link rel="stylesheet" href="./static/css/style.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- 顶部导航 -->
+  <header class="header">
+    <div class="header-left">
+      <span class="logo">📈 量化分析平台</span>
+      <nav class="nav-tabs">
+        <button class="nav-tab" data-tab="recommend" onclick="switchTab('recommend')">⭐ 推荐</button>
+        <button class="nav-tab active" data-tab="backtest" onclick="switchTab('backtest')">📊 回测</button>
+        <button class="nav-tab" data-tab="predict" onclick="switchTab('predict')">🔮 预测</button>
+      </nav>
+    </div>
+    <div class="header-right">
+      <span class="status-dot online"></span>
+      <span id="status-text">服务正常</span>
+    </div>
+  </header>
+
+  <!-- ══════════════════════════════════════════
+       TAB 1：回测
+  ══════════════════════════════════════════ -->
+  <div id="tab-backtest" class="tab-content active main">
+    <aside class="sidebar">
+      <div class="panel">
+        <div class="panel-title">🔍 股票选择</div>
+        <div class="form-group">
+          <label>股票搜索</label>
+          <div class="input-row">
+            <input id="symbol-input" type="text" placeholder="股票名称或代码，如 平安、000001" onkeydown="if(event.key==='Enter')searchStock()" />
+            <button class="btn-sm" onclick="searchStock()">搜索</button>
+          </div>
+          <div id="search-results" class="search-results hidden"></div>
+          <div id="stock-info" class="stock-info hidden"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">📅 回测区间</div>
+        <div class="form-group">
+          <label>开始日期</label>
+          <input id="start-date" type="date" />
+        </div>
+        <div class="form-group">
+          <label>结束日期</label>
+          <input id="end-date" type="date" />
+        </div>
+        <div class="quick-dates">
+          <button class="btn-tag" onclick="setDateRange(1)">近1年</button>
+          <button class="btn-tag" onclick="setDateRange(2)">近2年</button>
+          <button class="btn-tag" onclick="setDateRange(3)">近3年</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">⚙️ 资金设置</div>
+        <div class="form-group">
+          <label>初始资金（元）</label>
+          <input id="cash-input" type="number" value="100000" min="10000" step="10000" />
+        </div>
+        <div class="form-group">
+          <label>手续费率</label>
+          <input id="commission-input" type="number" value="0.001" min="0" max="0.01" step="0.0001" />
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">🧠 策略选择</div>
+        <div id="strategy-list" class="strategy-list"><div class="loading-text">加载中...</div></div>
+        <div id="strategy-params" class="strategy-params"></div>
+      </div>
+
+      <button class="btn-run" id="run-btn" onclick="runBacktest()">
+        <span id="run-btn-text">▶ 开始回测</span>
+      </button>
+    </aside>
+
+    <main class="content">
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon">📊</div>
+        <div class="empty-title">配置参数后点击「开始回测」</div>
+        <div class="empty-desc">支持双均线、RSI、布林带等多种策略</div>
+      </div>
+      <div id="result-area" class="hidden">
+        <div class="metrics-grid" id="metrics-grid"></div>
+        <div class="charts-area">
+          <div class="chart-card">
+            <div class="chart-title">资产净值曲线 vs 基准（买入持有）</div>
+            <div id="chart-portfolio" class="chart-box"></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">K 线图（含买卖点）</div>
+            <div id="chart-kline" class="chart-box"></div>
+          </div>
+        </div>
+        <div class="panel trade-panel">
+          <div class="panel-title">📋 交易记录</div>
+          <div id="trade-table-wrap"></div>
+        </div>
+      </div>
+      <div id="error-area" class="hidden error-area">
+        <div class="error-icon">⚠️</div>
+        <div id="error-msg" class="error-msg"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       TAB 2：预测
+  ══════════════════════════════════════════ -->
+  <div id="tab-predict" class="tab-content main hidden">
+    <aside class="sidebar">
+      <div class="panel">
+        <div class="panel-title">🔍 选择股票</div>
+        <div class="form-group">
+          <label>股票代码</label>
+          <div class="input-row">
+            <input id="pred-symbol" type="text" placeholder="A股6位 或 港股5位，如 000001 / 03690" onkeydown="if(event.key==='Enter')runPredict()" />
+          </div>
+          <div style="font-size:11px;color:var(--text2);margin-top:4px">支持 A 股 / 港股（美团03690、腾讯00700等）</div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">🧠 预测模式</div>
+        <div class="form-group">
+          <div class="mode-btns">
+            <button class="mode-btn active" id="mode-basic" onclick="setPredMode('basic',this)">
+              <div class="mode-name">⚡ 快速预测</div>
+              <div class="mode-desc">Monte Carlo · 约1秒</div>
+            </button>
+            <button class="mode-btn" id="mode-advanced" onclick="setPredMode('advanced',this)">
+              <div class="mode-name">🔬 集成增强</div>
+              <div class="mode-desc">3模型+调权 · 约30秒</div>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">⚙️ 预测设置</div>
+        <div class="form-group">
+          <label>预测天数</label>
+          <div class="quick-dates">
+            <button class="btn-tag pred-day-btn active" onclick="setPredDays(7,this)">7天</button>
+            <button class="btn-tag pred-day-btn" onclick="setPredDays(15,this)">15天</button>
+            <button class="btn-tag pred-day-btn" onclick="setPredDays(30,this)">30天</button>
+            <button class="btn-tag pred-day-btn" onclick="setPredDays(60,this)">60天</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel disclaimer-panel">
+        <div class="panel-title">⚠️ 免责声明</div>
+        <div class="disclaimer-text">
+          预测基于历史数据的统计模型，仅供参考，不构成投资建议。股市有风险，投资需谨慎。
+        </div>
+      </div>
+      <button class="btn-run" id="pred-btn" onclick="runPredict()">
+        <span id="pred-btn-text">🔮 开始预测</span>
+      </button>
+    </aside>
+
+    <main class="content">
+      <div id="pred-empty" class="empty-state">
+        <div class="empty-icon">🔮</div>
+        <div class="empty-title">输入股票代码，预测未来走势</div>
+        <div class="empty-desc">快速模式：Monte Carlo · 增强模式：ARIMA+GARCH+XGBoost 集成</div>
+      </div>
+      <div id="pred-result" class="hidden">
+        <div class="metrics-grid" id="pred-metrics"></div>
+        <div class="chart-card" style="margin-bottom:12px">
+          <div class="chart-title">历史走势 + 未来预测（含置信区间）</div>
+          <div id="chart-predict" style="height:360px"></div>
+        </div>
+        <!-- 交易建议：买入/止损/止盈 -->
+        <div id="pred-advice" class="hidden" style="margin-bottom:12px">
+          <div class="advice-header">
+            <span class="advice-title">💡 交易建议</span>
+            <span class="advice-disclaimer">仅供参考，不构成投资建议</span>
+          </div>
+          <div class="advice-cards" id="advice-cards"></div>
+        </div>
+
+        <!-- 利好/利空资讯 -->
+        <div id="pred-news" class="hidden" style="margin-bottom:12px">
+          <div class="news-header">
+            <span class="news-title">📰 最新资讯</span>
+            <div class="news-sentiment-bar" id="news-sentiment-bar"></div>
+            <span id="news-loading" class="news-loading hidden"><span class="spinner" style="border-color:rgba(79,142,247,0.3);border-top-color:var(--accent)"></span>加载资讯中...</span>
+          </div>
+          <div class="news-columns" id="news-columns"></div>
+        </div>
+
+        <!-- 增强模式：模型对比 + Walk-Forward 准确率 -->
+        <div id="pred-model-compare" class="hidden">
+          <div class="chart-card" style="margin-bottom:12px">
+            <div class="chart-title">📊 各模型预测对比</div>
+            <div id="chart-model-compare" style="height:260px"></div>
+          </div>
+          <div class="panel" style="margin-bottom:12px">
+            <div class="panel-title">🎯 Walk-Forward 历史验证（方向准确率）</div>
+            <div id="pred-validation-table"></div>
+          </div>
+          <div class="panel" style="margin-bottom:12px">
+            <div class="panel-title">🌲 XGBoost 特征重要性 Top 8</div>
+            <div id="chart-feat-importance" style="height:220px"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">📌 预测说明</div>
+          <div id="pred-explain" class="pred-explain"></div>
+        </div>
+      </div>
+      <div id="pred-error" class="hidden error-area">
+        <div class="error-icon">⚠️</div>
+        <div id="pred-error-msg" class="error-msg"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       TAB 3：推荐
+  ══════════════════════════════════════════ -->
+  <div id="tab-recommend" class="tab-content main hidden">
+    <aside class="sidebar">
+      <!-- 行业晴雨表 -->
+      <div class="panel heatmap-panel" id="heatmap-panel">
+        <div class="panel-title" style="display:flex;align-items:center;justify-content:space-between">
+          <span>🌤️ 行业晴雨表</span>
+          <span id="heatmap-date" class="heatmap-date"></span>
+        </div>
+        <div id="heatmap-body">
+          <div class="heatmap-loading">
+            <span class="spinner" style="border-color:rgba(79,142,247,0.3);border-top-color:var(--accent);width:14px;height:14px;border-width:2px"></span>
+            加载中...
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">⚙️ 筛选设置</div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <div style="flex:1;min-width:0">
+            <label class="filter-label">行业筛选</label>
+            <select id="rec-industry-select" class="rec-industry-select" onchange="onIndustryChange(this.value)">
+              <option value="农林牧渔">农林牧渔</option>
+              <option value="基础化工">基础化工</option>
+              <option value="钢铁">钢铁</option>
+              <option value="有色金属">有色金属</option>
+              <option value="电子">电子</option>
+              <option value="家用电器">家用电器</option>
+              <option value="食品饮料">食品饮料</option>
+              <option value="纺织服饰">纺织服饰</option>
+              <option value="轻工制造">轻工制造</option>
+              <option value="医药生物">医药生物</option>
+              <option value="公用事业">公用事业</option>
+              <option value="交通运输">交通运输</option>
+              <option value="房地产">房地产</option>
+              <option value="商贸零售">商贸零售</option>
+              <option value="社会服务">社会服务</option>
+              <option value="综合">综合</option>
+              <option value="建筑材料">建筑材料</option>
+              <option value="建筑装饰">建筑装饰</option>
+              <option value="电力设备">电力设备</option>
+              <option value="国防军工">国防军工</option>
+              <option value="计算机">计算机</option>
+              <option value="传媒">传媒</option>
+              <option value="通信">通信</option>
+              <option value="银行">银行</option>
+              <option value="非银金融">非银金融</option>
+              <option value="煤炭">煤炭</option>
+              <option value="汽车">汽车</option>
+              <option value="机械设备">机械设备</option>
+              <option value="环保">环保</option>
+              <option value="石油石化">石油石化</option>
+              <option value="美容护理">美容护理</option>
+            </select>
+          </div>
+          <div style="flex-shrink:0;width:68px">
+            <label class="filter-label">抽样数量</label>
+            <input
+              id="rec-sample-size"
+              type="number"
+              min="20"
+              max="200"
+              value="100"
+              class="rec-sample-input"
+              title="抽取候选股数量（20~200）"
+            />
+          </div>
+        </div>
+        <div id="rec-industry-hint" class="rec-industry-hint hidden" style="margin-top:-6px;margin-bottom:10px">
+          将从该行业随机抽取指定数量的候选股评分
+        </div>
+        <div class="form-group">
+          <label>显示数量</label>
+          <div class="quick-dates">
+            <button class="btn-tag rec-n-btn active" onclick="setTopN(10,this)">Top 10</button>
+            <button class="btn-tag rec-n-btn" onclick="setTopN(15,this)">Top 15</button>
+            <button class="btn-tag rec-n-btn" onclick="setTopN(20,this)">Top 20</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">📐 评分因子（绝对值评分）</div>
+        <div class="factor-list">
+          <div class="factor-item"><span>📈 动量（近20日涨跌）</span><span class="factor-weight">30%</span></div>
+          <div class="factor-item"><span>💪 相对强弱（vs大盘）</span><span class="factor-weight">20%</span></div>
+          <div class="factor-item"><span>🚀 趋势加速度</span><span class="factor-weight">15%</span></div>
+          <div class="factor-item"><span>📊 均线多头排列</span><span class="factor-weight">15%</span></div>
+          <div class="factor-item"><span>🎯 稳定性（低波动）</span><span class="factor-weight">10%</span></div>
+          <div class="factor-item"><span>📦 量价配合</span><span class="factor-weight">5%</span></div>
+          <div class="factor-item"><span>🔢 RSI 合理区间</span><span class="factor-weight">5%</span></div>
+        </div>
+        <div style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.6">
+          采用 <strong style="color:var(--accent)">绝对值阈值</strong> 评分，避免行业整体差时评分虚高。相对强弱仍用截面排名。
+        </div>
+      </div>
+      <div class="panel disclaimer-panel">
+        <div class="panel-title">⚠️ 免责声明</div>
+        <div class="disclaimer-text">推荐结果基于技术面因子，不代表未来收益，不构成投资建议。</div>
+      </div>
+      <!-- ── 筛选进度条 ── -->
+      <div id="rec-progress-wrap" class="rec-progress-wrap hidden">
+        <div class="rec-progress-label">
+          <span id="rec-progress-step">准备中...</span>
+          <span id="rec-progress-pct">0%</span>
+        </div>
+        <div class="rec-progress-track">
+          <div class="rec-progress-bar" id="rec-progress-bar" style="width:0%"></div>
+        </div>
+        <div id="rec-progress-msg" class="rec-progress-msg"></div>
+      </div>
+
+      <button class="btn-run" id="rec-btn" onclick="runRecommend()">
+        <span id="rec-btn-text">⭐ 开始筛选</span>
+      </button>
+      <button class="btn-run" id="rec-refresh-btn" onclick="runRecommend(true)" style="margin-top:8px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:13px">
+        🔄 换一批（重新采样）
+      </button>
+    </aside>
+
+    <main class="content">
+      <div id="rec-empty" class="empty-state">
+        <div class="empty-icon">⭐</div>
+        <div class="empty-title">点击「开始筛选」获取推荐股票</div>
+        <div class="empty-desc">从15个行业随机采样 · 截面归一化评分 · 每次结果不同</div>
+      </div>
+      <div id="rec-result" class="hidden">
+        <div class="rec-header" id="rec-header"></div>
+        <!-- 算法说明 -->
+        <div id="rec-algo-note" class="algo-note"></div>
+        <div style="display:flex;gap:12px;margin-bottom:12px">
+          <!-- 评分柱状图 -->
+          <div class="chart-card" style="flex:1;min-width:0">
+            <div class="chart-title">Top 股票综合评分对比</div>
+            <div id="chart-rec-bar" style="height:300px"></div>
+          </div>
+          <!-- 股票详解面板 -->
+          <div class="rec-detail-panel" id="rec-detail-panel">
+            <div class="rec-detail-header">
+              <span class="rec-detail-title" id="rec-detail-title">📖 指标说明</span>
+              <span class="rec-detail-hint" id="rec-detail-hint">点击下方股票查看得分详情</span>
+            </div>
+            <div class="rec-detail-body" id="rec-detail-body">
+              <!-- 默认：指标说明 -->
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-title">📋 详细评分榜单</div>
+          <div id="rec-table-wrap"></div>
+        </div>
+      </div>
+      <div id="rec-error" class="hidden error-area">
+        <div class="error-icon">⚠️</div>
+        <div id="rec-error-msg" class="error-msg"></div>
+      </div>
+
+      <!-- ── 历史推荐记录面板 ── -->
+      <div id="rec-history-panel" class="rec-history-panel">
+        <div class="rec-history-header">
+          <span class="rec-history-title">📂 历史推荐记录</span>
+          <span id="rec-history-count" class="rec-history-count"></span>
+          <button class="rec-history-refresh" onclick="loadRecHistory()" title="刷新">↻</button>
+        </div>
+        <div id="rec-history-list" class="rec-history-list">
+          <div class="rec-history-empty">暂无历史记录，完成一次推荐后自动保存</div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+</div>
+<script src="./static/js/main.js"></script>
+</body>
+</html>

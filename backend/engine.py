@@ -118,40 +118,61 @@ def fetch_stock_data(symbol: str, start_date: str, end_date: str, adjust: str = 
     if is_hk_stock(symbol):
         return fetch_hk_stock_data(symbol, start_date, end_date)
 
-    # A 股走 baostock
+    # A 股走 baostock，加重试机制应对 TCP 连接状态异常
     bs_code = _get_bs_code(symbol)
     adjustflag = _ADJUST_MAP.get(adjust, "2")
 
-    lg = bs.login()
-    if lg.error_code != "0":
-        raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
-    try:
-        rs = bs.query_history_k_data_plus(
-            bs_code,
-            "date,open,high,low,close,volume",
-            start_date=start_date,
-            end_date=end_date,
-            frequency="d",
-            adjustflag=adjustflag,
-        )
-        if rs.error_code != "0":
-            raise RuntimeError(f"数据查询失败: {rs.error_msg}")
-        rows = []
-        while rs.error_code == "0" and rs.next():
-            row = rs.get_row_data()
-            rows.append(row)
-    finally:
-        bs.logout()
+    last_err = None
+    for attempt in range(3):
+        try:
+            # 每次先强制断开旧连接，再重新登录，避免 TCP 状态残留
+            try:
+                bs.logout()
+            except Exception:
+                pass
 
-    if not rows:
-        raise ValueError(f"未获取到数据，请检查股票代码 {symbol} 和日期范围")
+            import time as _time
+            if attempt > 0:
+                _time.sleep(1)  # 重试前稍等
 
-    df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume"])
-    df["date"] = pd.to_datetime(df["date"])
-    df.set_index("date", inplace=True)
-    df = df.replace("", np.nan).dropna()
-    df = df.astype(float)
-    return df
+            lg = bs.login()
+            if lg.error_code != "0":
+                raise RuntimeError(f"baostock 登录失败: {lg.error_msg}")
+            try:
+                rs = bs.query_history_k_data_plus(
+                    bs_code,
+                    "date,open,high,low,close,volume",
+                    start_date=start_date,
+                    end_date=end_date,
+                    frequency="d",
+                    adjustflag=adjustflag,
+                )
+                if rs.error_code != "0":
+                    raise RuntimeError(f"数据查询失败: {rs.error_msg}")
+                rows = []
+                while rs.error_code == "0" and rs.next():
+                    rows.append(rs.get_row_data())
+            finally:
+                bs.logout()
+
+            if not rows:
+                raise ValueError(f"未获取到数据，请检查股票代码 {symbol} 和日期范围")
+
+            df = pd.DataFrame(rows, columns=["date", "open", "high", "low", "close", "volume"])
+            df["date"] = pd.to_datetime(df["date"])
+            df.set_index("date", inplace=True)
+            df = df.replace("", np.nan).dropna()
+            df = df.astype(float)
+            return df
+
+        except (RuntimeError, ValueError) as e:
+            last_err = e
+            # "网络接收错误" 等连接类错误才重试，数据不存在直接抛出
+            if "网络" not in str(e) and "连接" not in str(e) and "socket" not in str(e).lower():
+                raise
+            continue
+
+    raise RuntimeError(f"baostock 查询失败（已重试3次）: {last_err}")
 
 
 # ─────────────────────────────────────────

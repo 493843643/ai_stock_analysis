@@ -167,6 +167,11 @@ def stock_info():
         else:
             bs_code = f"sz.{symbol}"
 
+        # 先强制断开旧连接，避免 TCP 状态残留导致"网络接收错误"
+        try:
+            bs.logout()
+        except Exception:
+            pass
         lg = bs.login()
         try:
             # 查基本信息
